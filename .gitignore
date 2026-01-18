@@ -1,0 +1,13 @@
+node_modules/
+npm-debug.log
+
+.env
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+public/uploads/*
+!public/uploads/.gitkeep
+
+.vscode/

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSUMIDOKU Manager</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <h1><i class="fa-solid fa-book-open"></i> TSUMIDOKU Manager</h1>
+      <form action="/add" method="GET" style="margin: 0;">
+        <button type="submit" class="btn"><i class="fa-solid fa-plus"></i> 新規書籍登録</button>
+      </form>
+    </header>
+
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">総書籍数</div>
+        <div class="stat-number total"><%= stats.total %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">未読</div>
+        <div class="stat-number unread"><%= stats.unread %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">読書中</div>
+        <div class="stat-number reading"><%= stats.reading %></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">既読</div>
+        <div class="stat-number read"><%= stats.read %></div>
+      </div>
+    </section>
+
+    <main>
+      <% if (books.length === 0) { %>
+      <div style="text-align: center; color: var(--text-light); margin-top: 50px;">
+        <i class="fa-solid fa-books" style="font-size: 3rem; margin-bottom: 20px; display: block;"></i>
+        <p>書籍がまだ登録されていません。<br>右上のボタンから最初の1冊を登録しましょう！</p>
+      </div>
+      <% } else { %>
+      <%
+        const statusMap = {
+          unread: '未読',
+          reading: '読書中',
+          read: '既読'
+        };
+      %>
+      <div class="book-grid">
+        <% books.forEach(book => { %>
+        <article class="book-card">
+          <div class="card-header">
+            <h3 class="book-title"><%= book.title %></h3>
+            <div class="book-author">
+              <%= book.author || '不明な著者' %>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <% if (book.image_filename) { %>
+            <div style="margin-bottom: 15px; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+              <img src="/uploads/<%= book.image_filename %>" alt="Book Cover" style="max-width: 100%; max-height: 200px; object-fit: contain;">
+            </div>
+            <% } %>
+
+            <% if (book.memo) { %>
+            <div class="memo"><%= book.memo %></div>
+            <% } else { %>
+            <div class="memo" style="color: #ccc;">No Memo</div>
+            <% } %>
+          </div>
+
+          <% if (book.status === 'reading' && book.total_pages > 0) { 
+                 const progress = Math.min(100, Math.round((book.current_page / book.total_pages) * 100));
+            %>
+          <div style="margin-top: 10px;">
+            <div class="progress-container">
+              <div class="progress-bar" style="width: <%= progress %>%;"></div>
+            </div>
+            <div class="progress-text">
+              <%= book.current_page %> / <%= book.total_pages %> p (<%= progress %>%)
+            </div>
+            <form onsubmit="event.preventDefault(); updateProgress(<%= book.id %>, this.pages.value)" style="display: flex; gap: 5px; margin-top: 5px; justify-content: flex-end;">
+              <input type="number" name="pages" value="<%= book.current_page %>" min="0" max="<%= book.total_pages %>" style="width: 60px; font-size: 0.8rem; padding: 2px;" placeholder="P">
+              <button type="submit" class="btn btn-sm" style="padding: 2px 6px; font-size: 0.7rem;">更新</button>
+            </form>
+          </div>
+          <% } %>
+
+
+          <div class="card-footer">
+            <%
+                let statusLabel = statusMap[book.status] || book.status;
+                let statusClass = '';
+                if(book.status === 'unread') statusClass = 'status-unread';
+                else if(book.status === 'reading') statusClass = 'status-reading';
+                else if(book.status === 'read') statusClass = 'status-read';
+            %>
+            <span class="status-badge <%= statusClass %>"><%= statusLabel %></span>
+
+            <div class="actions">
+              <% if (book.status === 'unread') { %>
+              <button class="btn btn-sm" onclick="updateStatus(<%= book.id %>, 'reading')">開始</button>
+              <% } else if (book.status === 'reading') { %>
+              <button class="btn btn-sm" onclick="updateStatus(<%= book.id %>, 'read')">完了</button>
+              <% } %>
+
+              <button class="btn btn-sm" onclick="openEditModal(<%= book.id %>, '<%= book.title %>', <%= book.total_pages %>, `<%= book.memo %>`)">編集</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteBook(<%= book.id %>)">削除</button>
+            </div>
+          </div>
+        </article>
+        <% }); %>
+      </div>
+      <% } %>
+    </main>
+  </div>
+
+  <div id="deleteModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">削除の確認</h3>
+      </div>
+      <div class="modal-body">
+        <p>本当にこの書籍を削除しますか？</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm" id="cancelDeleteBtn" onclick="closeModal()">キャンセル</button>
+        <button class="btn btn-sm btn-danger" id="confirmDeleteBtn">削除する</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let bookToDeleteId = null;
+    let lastFocusedElement = null;
+
+    async function updateProgress(id, pages) {
+      try {
+        const response = await fetch(`/api/books/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            current_page: parseInt(pages)
+          })
+        });
+
+        if (response.ok) window.location.reload();
+      } catch (err) {
+        console.error(err);
+        alert('更新に失敗しました');
+      }
+    }
+
+    async function updateStatus(id, newStatus) {
+      try {
+        const response = await fetch(`/api/books/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: newStatus
+          })
+        });
+
+        if (response.ok) window.location.reload();
+      } catch (err) {
+        console.error(err);
+        alert('エラーが発生しました');
+      }
+    }
+
+    function deleteBook(id) {
+      bookToDeleteId = id;
+      lastFocusedElement = document.activeElement;
+      const modal = document.getElementById('deleteModal');
+      modal.style.display = 'flex';
+
+      const cancelButton = document.getElementById('cancelDeleteBtn');
+      cancelButton.focus();
+
+      modal.addEventListener('keydown', trapFocus);
+    }
+
+    function closeModal() {
+      bookToDeleteId = null;
+      const modal = document.getElementById('deleteModal');
+      modal.style.display = 'none';
+      modal.removeEventListener('keydown', trapFocus);
+
+      if (lastFocusedElement) {
+        lastFocusedElement.focus();
+      }
+    }
+
+    function trapFocus(e) {
+      if (e.key === 'Tab') {
+        const modal = document.getElementById('deleteModal');
+        const focusableElements = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      } else if (e.key === 'Escape') {
+        closeModal();
+      }
+    }
+
+    document.getElementById('confirmDeleteBtn').addEventListener('click', async () => {
+      if (!bookToDeleteId) return;
+
+      try {
+        const response = await fetch(`/api/books/${bookToDeleteId}`, {
+          method: 'DELETE'
+        });
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert('削除に失敗しました');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('エラーが発生しました');
+      }
+      closeModal();
+    });
+
+    document.getElementById('deleteModal').addEventListener('click', (e) => {
+      if (e.target.id === 'deleteModal') {
+        closeModal();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+    if (document.getElementById('deleteModal').style.display === 'flex') return;
+
+    if (e.key === 'Tab') {
+      const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+      const allFocusable = Array.from(document.querySelectorAll(focusableSelectors));
+      const visibleFocusable = allFocusable.filter(el => el.offsetParent !== null);
+
+      if (visibleFocusable.length === 0) return;
+
+      const firstElement = visibleFocusable[0];
+      const lastElement = visibleFocusable[visibleFocusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    }
+    });
+
+    });
+
+    let lastFocusedEditElement = null;
+
+    function openEditModal(id, title, totalPages, memo) {
+      document.getElementById('editBookId').value = id;
+      document.getElementById('editTotalPages').value = totalPages;
+      document.getElementById('editMemo').value = memo;
+      document.getElementById('editModalTitle').textContent = `編集: ${title}`;
+
+      lastFocusedEditElement = document.activeElement;
+
+      const modal = document.getElementById('editModal');
+      modal.style.display = 'flex';
+
+      document.getElementById('editTotalPages').focus();
+      modal.addEventListener('keydown', trapEditFocus);
+    }
+
+    function closeEditModal() {
+      const modal = document.getElementById('editModal');
+      modal.style.display = 'none';
+      modal.removeEventListener('keydown', trapEditFocus);
+
+      if (lastFocusedEditElement) lastFocusedEditElement.focus();
+    }
+
+    async function submitEdit() {
+      const id = document.getElementById('editBookId').value;
+      const totalPages = document.getElementById('editTotalPages').value;
+      const memo = document.getElementById('editMemo').value;
+
+      try {
+        const response = await fetch(`/api/books/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            total_pages: parseInt(totalPages),
+            memo: memo
+          })
+        });
+
+        if (response.ok) {
+          window.location.reload();
+        } else {
+          alert('更新に失敗しました');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('エラーが発生しました');
+      }
+    }
+
+    function trapEditFocus(e) {
+      if (e.key === 'Tab') {
+        const modal = document.getElementById('editModal');
+        const focusableElements = modal.querySelectorAll('button, input, textarea, [href], [tabindex]:not([tabindex="-1"])');
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      } else if (e.key === 'Escape') {
+        closeEditModal();
+      }
+    }
+
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.id === 'editModal') closeEditModal();
+    });
+
+    window.addEventListener('pageshow', () => {
+      const focusableSelectors = 'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+      setTimeout(() => {
+        const allFocusable = Array.from(document.querySelectorAll(focusableSelectors));
+        const visibleFocusable = allFocusable.filter(el => el.offsetParent !== null);
+
+        if (visibleFocusable.length > 0) {
+          visibleFocusable[0].focus();
+        }
+      }, 100);
+    });
+  </script>
+</body>
+
+</html>

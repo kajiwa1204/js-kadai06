@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>書籍登録 - TSUMIDOKU Manager</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+</head>
+
+<body>
+  <div class="container">
+    <header style="justify-content: center; border-bottom: none">
+      <form action="/" method="GET" style="position: absolute; left: 20px; margin: 0">
+        <button type="submit" class="btn" style="background: #aab7b8"><i class="fa-solid fa-arrow-left"></i> 戻る</button>
+      </form>
+      <h1>New Book</h1>
+    </header>
+
+    <form id="addBookForm" class="form-card card" style="background: white; padding: 40px; border-radius: 8px; border: 1px solid #e0e0e0">
+      <div class="form-group">
+        <label for="title">書籍タイトル <span style="color: red">*</span></label>
+        <input type="text" id="title" name="title" required placeholder="タイトルを入力" autofocus />
+      </div>
+
+      <div class="form-group">
+        <label for="author">著者名</label>
+        <input type="text" id="author" name="author" placeholder="著者名を入力" />
+      </div>
+
+      <div class="form-group">
+        <label for="total_pages">総ページ数</label>
+        <input type="number" id="total_pages" name="total_pages" placeholder="300" min="1" />
+      </div>
+
+      <div class="form-group">
+        <label for="image">書籍画像</label>
+        <input type="file" id="image" name="image" accept="image/*" style="border: none; padding-left: 0" />
+      </div>
+
+      <div class="form-group">
+        <label for="memo">メモ</label>
+        <textarea id="memo" name="memo" rows="4" placeholder="感想やメモを入力"></textarea>
+      </div>
+
+      <div style="text-align: center">
+        <button type="submit" class="btn" style="width: 100%">登録する</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('addBookForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData();
+      formData.append('title', document.getElementById('title').value);
+      formData.append('author', document.getElementById('author').value);
+      formData.append('total_pages', document.getElementById('total_pages').value);
+      formData.append('memo', document.getElementById('memo').value);
+
+      const imageFile = document.getElementById('image').files[0];
+      if (imageFile) {
+        formData.append('image', imageFile);
+      }
+
+      try {
+        const response = await fetch('/api/books', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          window.location.href = '/';
+        } else {
+          alert('登録に失敗しました');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('エラーが発生しました');
+      }
+    });
+  </script>
+</body>
+
+</html>
